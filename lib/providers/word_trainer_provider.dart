@@ -124,10 +124,63 @@ class WordTrainerProvider with ChangeNotifier {
   }
 
   Future<void> toggleWordLearned(String english) async {
-    final success = await _db.toggleWordLearned(english);
-    if (success && _words.containsKey(english)) {
-      _words[english]!.learned = !_words[english]!.learned;
-      notifyListeners();
+    try {
+      final success = await _db.toggleWordLearned(english);
+      if (success && _words.containsKey(english)) {
+        // Змінюємо статус слова на протилежний
+        _words[english]!.learned = !_words[english]!.learned;
+        
+        // Повідомляємо інтерфейс про зміни
+        notifyListeners();
+        
+        // Якщо слово позначається як невивчене, видаляємо його з поточного списку,
+        // якщо ми показуємо тільки вивчені слова
+        if (!_words[english]!.learned) {
+          // Тимчасово видаляємо слово з поточного списку, якщо ми в режимі вивчених слів
+          // Це допоможе оновити інтерфейс без повного перезавантаження
+          print('Слово $english позначено як невивчене і буде видалено зі списку вивчених');
+        }
+      }
+    } catch (e) {
+      print('Помилка при зміні статусу слова в провайдері: $e');
+    }
+  }
+
+  // Позначає слово як вивчене під час тренування
+  Future<void> markWordAsLearned(String english) async {
+    try {
+      // Якщо слово ще не позначене як вивчене
+      if (_words.containsKey(english) && !_words[english]!.learned) {
+        final success = await _db.markWordAsLearned(english);
+        if (success) {
+          // Оновлюємо статус слова в локальному стані
+          _words[english]!.learned = true;
+          
+          // Повідомляємо про зміни в інтерфейсі
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      print('Помилка при позначенні слова як вивченого: $e');
+    }
+  }
+  
+  // Позначає слово як невивчене
+  Future<void> markWordAsUnlearned(String english) async {
+    try {
+      // Якщо слово позначене як вивчене
+      if (_words.containsKey(english) && _words[english]!.learned) {
+        final success = await _db.markWordAsUnlearned(english);
+        if (success) {
+          // Оновлюємо статус слова в локальному стані
+          _words[english]!.learned = false;
+          
+          // Повідомляємо про зміни в інтерфейсі
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      print('Помилка при позначенні слова як невивченого: $e');
     }
   }
 
@@ -245,5 +298,46 @@ class WordTrainerProvider with ChangeNotifier {
   void setCurrentLesson(String lessonName) {
     _currentLesson = lessonName;
     notifyListeners();
+  }
+
+  // Повністю видаляє слово з бази даних
+  Future<bool> deleteWord(String english) async {
+    try {
+      print('Провайдер: починаємо видалення слова "$english"');
+      
+      // Перевіряємо, чи існує слово локально
+      if (!_words.containsKey(english)) {
+        print('Провайдер: слово "$english" не знайдено в локальному кеші');
+        // Спробуємо все одно видалити з бази даних
+      }
+      
+      // Спочатку зберігаємо копію слова для можливого відновлення
+      Word? wordBackup = _words[english];
+      
+      // Видаляємо з локального стану для миттєвого оновлення UI
+      if (wordBackup != null) {
+        _words.remove(english);
+        // Повідомляємо про зміни в інтерфейсі
+        notifyListeners();
+      }
+      
+      // Тепер видаляємо з бази даних
+      final success = await _db.deleteWord(english);
+      print('Провайдер: результат видалення слова з БД: $success');
+      
+      if (!success && wordBackup != null) {
+        // Якщо видалення з бази даних не вдалося, повертаємо слово в локальний стан
+        print('Провайдер: відновлюємо слово "$english" в локальному кеші після помилки');
+        _words[english] = wordBackup;
+        notifyListeners();
+        return false;
+      }
+      
+      // Якщо ми тут, то видалення було успішним або резервної копії не було
+      return success;
+    } catch (e) {
+      print('Помилка при видаленні слова в провайдері: $e');
+      return false;
+    }
   }
 } 

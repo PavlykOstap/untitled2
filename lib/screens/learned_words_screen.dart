@@ -13,7 +13,8 @@ class LearnedWordsScreen extends StatefulWidget {
 class _LearnedWordsScreenState extends State<LearnedWordsScreen> {
   final _searchController = TextEditingController();
   String _selectedLesson = 'Всі уроки';
-
+  String? _selectedWordKey;
+  
   @override
   void initState() {
     super.initState();
@@ -119,62 +120,240 @@ class _LearnedWordsScreenState extends State<LearnedWordsScreen> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: filteredWords.length,
-                itemBuilder: (context, index) {
-                  final entry = filteredWords[index];
-                  return Slidable(
-                    endActionPane: ActionPane(
-                      motion: const ScrollMotion(),
-                      children: [
-                        SlidableAction(
-                          onPressed: (_) async {
-                            await provider.toggleWordLearned(entry.key);
-                          },
-                          backgroundColor: Colors.orange,
-                          foregroundColor: Colors.white,
-                          icon: Icons.refresh,
-                          label: 'Повторити',
-                        ),
-                      ],
-                    ),
-                    child: Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
+              child: filteredWords.isEmpty 
+                ? Center(
+                    child: Text(
+                      'Немає вивчених слів',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[700],
                       ),
-                      child: ListTile(
-                        title: Text(
-                          entry.key,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : ListView.builder(
+                  itemCount: filteredWords.length,
+                  itemBuilder: (context, index) {
+                    final entry = filteredWords[index];
+                    final isSelected = entry.key == _selectedWordKey;
+                    
+                    return Slidable(
+                      endActionPane: ActionPane(
+                        motion: const ScrollMotion(),
+                        children: [
+                          SlidableAction(
+                            onPressed: (_) async {
+                              // Використовуємо спеціальний метод для позначення як невивчене
+                              await provider.markWordAsUnlearned(entry.key);
+                              
+                              // Оновлюємо список вивчених слів після видалення
+                              await provider.loadWords(
+                                lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                                showLearned: true,
+                              );
+                              
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Слово "${entry.key}" повернуто до словника'),
+                                    backgroundColor: Colors.orange,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                            icon: Icons.refresh,
+                            label: 'Повернути',
                           ),
+                          SlidableAction(
+                            onPressed: (_) async {
+                              // Показуємо діалог підтвердження
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Видалення з вивчених'),
+                                  content: Text('Ви впевнені, що хочете видалити "${entry.key}" зі списку вивчених слів?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(false),
+                                      child: const Text('Скасувати'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(true),
+                                      child: const Text('Видалити'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              
+                              if (confirm == true) {
+                                // Використовуємо спеціальний метод для позначення як невивчене
+                                await provider.markWordAsUnlearned(entry.key);
+                                
+                                // Оновлюємо список вивчених слів після видалення
+                                await provider.loadWords(
+                                  lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                                  showLearned: true,
+                                );
+                                
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Слово "${entry.key}" видалено з вивчених'),
+                                      backgroundColor: Colors.red[400],
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            icon: Icons.delete,
+                            label: 'Видалити',
+                          ),
+                        ],
+                      ),
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(entry.value.ukrainian),
-                            Text(
-                              'Урок: ${entry.value.lesson}',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
+                        child: ListTile(
+                          title: Text(
+                            entry.key,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(entry.value.ukrainian),
+                              Text(
+                                'Урок: ${entry.value.lesson}',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedWordKey = entry.key;
+                              });
+                              _showWordOptions(context, provider, entry.key);
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isSelected ? Colors.grey[300] : Colors.green,
+                              ),
+                              child: Icon(
+                                Icons.check,
+                                color: isSelected ? Colors.grey[600] : Colors.white,
                               ),
                             ),
-                          ],
-                        ),
-                        trailing: const Icon(
-                          Icons.check_circle,
-                          color: Colors.green,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
             ),
           ],
         ),
+      ),
+    );
+  }
+  
+  // Показує опції для слова (видалити повністю або повернути до словника)
+  void _showWordOptions(BuildContext context, WordTrainerProvider provider, String wordKey) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.refresh, color: Colors.orange),
+            title: const Text('Повернути до словника'),
+            subtitle: const Text('Слово буде позначено як невивчене і з\'явиться в режимі тренування'),
+            onTap: () async {
+              Navigator.pop(context);
+              await provider.markWordAsUnlearned(wordKey);
+              
+              // Оновлюємо список вивчених слів
+              await provider.loadWords(
+                lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                showLearned: true,
+              );
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Слово "$wordKey" повернуто до словника'),
+                    backgroundColor: Colors.orange,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            title: const Text('Видалити повністю'),
+            subtitle: const Text('Слово буде видалено з бази даних і зникне зі словника'),
+            onTap: () async {
+              Navigator.pop(context);
+              
+              // Показуємо діалог підтвердження
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Видалення слова'),
+                  content: Text('Ви впевнені, що хочете повністю видалити слово "$wordKey"?\n\nЦю дію неможливо скасувати.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Скасувати'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Видалити', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+              
+              if (confirm == true) {
+                final success = await provider.deleteWord(wordKey);
+                
+                // Оновлюємо список після видалення
+                await provider.loadWords(
+                  lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                  showLearned: true,
+                );
+                
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(success 
+                        ? 'Слово "$wordKey" видалено повністю' 
+                        : 'Помилка при видаленні слова'
+                      ),
+                      backgroundColor: success ? Colors.red : Colors.grey,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }

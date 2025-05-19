@@ -52,7 +52,11 @@ class DatabaseService {
       if (lessonName != null && lessonName != "Всі уроки") {
         query = query.where('lesson', isEqualTo: lessonName);
       }
-      query = query.where('learned', isEqualTo: showLearned);
+      if (showLearned) {
+        query = query.where('learned', isEqualTo: true);
+      } else {
+        query = query.where('learned', isEqualTo: false);
+      }
 
       final snapshot = await query.get();
       for (var doc in snapshot.docs) {
@@ -181,6 +185,42 @@ class DatabaseService {
       return false;
     }
   }
+  
+  // Позначає слово як вивчене (без переключення)
+  Future<bool> markWordAsLearned(String english) async {
+    try {
+      final docRef = _firestore.collection('words').doc(english);
+      final doc = await docRef.get();
+      
+      if (!doc.exists) return false;
+      
+      // Встановлюємо статус вивченого слова на 'true'
+      await docRef.update({'learned': true});
+      
+      return true;
+    } catch (e) {
+      print('Помилка при позначенні слова як вивченого: $e');
+      return false;
+    }
+  }
+  
+  // Позначає слово як невивчене (без переключення)
+  Future<bool> markWordAsUnlearned(String english) async {
+    try {
+      final docRef = _firestore.collection('words').doc(english);
+      final doc = await docRef.get();
+      
+      if (!doc.exists) return false;
+      
+      // Встановлюємо статус вивченого слова на 'false'
+      await docRef.update({'learned': false});
+      
+      return true;
+    } catch (e) {
+      print('Помилка при позначенні слова як невивченого: $e');
+      return false;
+    }
+  }
 
   Future<bool> updateWord(String oldEnglish, String newEnglish, String newUkrainian, String newLesson) async {
     try {
@@ -256,6 +296,51 @@ class DatabaseService {
       }
     } catch (e) {
       print('Помилка при оновленні слова: $e');
+      return false;
+    }
+  }
+
+  // Повністю видаляє слово з бази даних
+  Future<bool> deleteWord(String english) async {
+    try {
+      print('База даних: спроба видалення слова "$english"');
+      
+      // Отримуємо посилання на документ
+      final docRef = _firestore.collection('words').doc(english);
+      
+      // Перевіряємо чи документ існує
+      final doc = await docRef.get();
+      
+      if (!doc.exists) {
+        print('База даних: слово "$english" не знайдено в базі даних');
+        return false;
+      }
+      
+      // Додаткова перевірка даних документа
+      final data = doc.data();
+      if (data == null) {
+        print('База даних: документ для слова "$english" не містить даних');
+        // Видаляємо порожній документ
+        await docRef.delete();
+        return true;
+      }
+      
+      print('База даних: видаляємо слово "$english" з даними: $data');
+      
+      // Видаляємо документ
+      await docRef.delete();
+      
+      // Перевіряємо, що документ справді видалено
+      final checkDoc = await docRef.get();
+      if (checkDoc.exists) {
+        print('База даних: помилка видалення, документ все ще існує');
+        return false;
+      }
+      
+      print('База даних: слово "$english" успішно видалено');
+      return true;
+    } catch (e) {
+      print('Помилка при видаленні слова з бази даних: $e');
       return false;
     }
   }

@@ -18,6 +18,7 @@ class _TrainingScreenState extends State<TrainingScreen> {
   final _answerController = TextEditingController();
   bool _showError = false;
   String _errorMessage = '';
+  bool _showSuccess = false;
 
   @override
   void dispose() {
@@ -99,12 +100,25 @@ class _TrainingScreenState extends State<TrainingScreen> {
                     ),
                     filled: true,
                     fillColor: Colors.white,
+                    suffixIcon: _showSuccess 
+                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      : null,
                   ),
                   enableSuggestions: false,
                   autocorrect: false,
                   enableIMEPersonalizedLearning: false,
                   onSubmitted: (_) => _checkAnswer(context, provider),
                 ),
+                const SizedBox(height: 10),
+                if (_showSuccess)
+                  const Text(
+                    'Молодець!',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: () => _checkAnswer(context, provider),
@@ -224,6 +238,7 @@ class _TrainingScreenState extends State<TrainingScreen> {
       setState(() {
         _showError = true;
         _errorMessage = 'Введіть відповідь';
+        _showSuccess = false;
       });
       return;
     }
@@ -232,10 +247,27 @@ class _TrainingScreenState extends State<TrainingScreen> {
     setState(() {
       _showError = !isCorrect;
       _errorMessage = isCorrect ? '' : 'Неправильна відповідь';
+      _showSuccess = isCorrect;
     });
 
     if (isCorrect) {
+      // Отримуємо поточне слово для позначення як вивчене
+      final currentWord = provider.trainingWords[provider.trainingIndex - 1];
+      
+      // Позначаємо слово як вивчене
+      provider.markWordAsLearned(currentWord.english);
+      
+      // Очищаємо поле для наступної відповіді
       _answerController.clear();
+      
+      // Приховуємо повідомлення "Молодець!" через 1.5 секунди
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) {
+          setState(() {
+            _showSuccess = false;
+          });
+        }
+      });
     }
   }
 } 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/word_trainer_provider.dart';
 import '../models/word.dart';
 
@@ -16,6 +17,16 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   String _selectedLesson = 'Всі уроки';
   String? _selectedWordKey;
   late ScaffoldMessengerState _scaffoldMessenger;
+
+  @override
+  void initState() {
+    super.initState();
+    // Завантажуємо слова при ініціалізації, вказуючи showLearned: false
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = Provider.of<WordTrainerProvider>(context, listen: false);
+      provider.loadWords(showLearned: false);
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -119,7 +130,7 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                           _selectedLesson = value;
                           _selectedWordKey = null; // Скидаємо вибране слово при зміні уроку
                         });
-                        provider.loadWords(lessonName: value);
+                        provider.loadWords(lessonName: value, showLearned: false);
                       }
                     },
                   ),
@@ -139,7 +150,32 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                       children: [
                         SlidableAction(
                           onPressed: (_) async {
-                            await provider.toggleWordLearned(entry.key);
+                            if (entry.value.learned) {
+                              // Якщо слово вже вивчене, переключаємо його статус
+                              await provider.toggleWordLearned(entry.key);
+                            } else {
+                              // Якщо слово не вивчене, позначаємо його як вивчене
+                              await provider.markWordAsLearned(entry.key);
+                            }
+                            
+                            // Оновлюємо список слів після зміни статусу
+                            await provider.loadWords(
+                              lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                              showLearned: false
+                            );
+                            
+                            if (mounted) {
+                              _scaffoldMessenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(entry.value.learned ? 
+                                    'Слово перенесено в режим повторення' : 
+                                    'Слово позначено як вивчене'),
+                                  backgroundColor: entry.value.learned ? 
+                                    Colors.orange : Colors.green,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
                           },
                           backgroundColor: entry.value.learned
                               ? Colors.orange
@@ -211,11 +247,48 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (entry.value.learned)
-                                const Icon(
-                                  Icons.check_circle,
-                                  color: Colors.green,
+                              // Кнопка для позначення слова як вивчене
+                              IconButton(
+                                icon: Icon(
+                                  entry.value.learned ? 
+                                    Icons.check_circle : 
+                                    Icons.check_circle_outline,
+                                  color: entry.value.learned ? 
+                                    Colors.green : 
+                                    Colors.grey,
                                 ),
+                                tooltip: entry.value.learned ? 
+                                  'Позначено як вивчене' : 
+                                  'Позначити як вивчене',
+                                onPressed: () async {
+                                  if (entry.value.learned) {
+                                    // Якщо слово вже вивчене, переключаємо його статус
+                                    await provider.toggleWordLearned(entry.key);
+                                  } else {
+                                    // Якщо слово не вивчене, позначаємо його як вивчене
+                                    await provider.markWordAsLearned(entry.key);
+                                  }
+                                  
+                                  // Оновлюємо список слів після зміни статусу
+                                  await provider.loadWords(
+                                    lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                                    showLearned: false
+                                  );
+                                  
+                                  if (mounted) {
+                                    _scaffoldMessenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(entry.value.learned ? 
+                                          'Слово перенесено в режим повторення' : 
+                                          'Слово позначено як вивчене'),
+                                        backgroundColor: entry.value.learned ? 
+                                          Colors.orange : Colors.green,
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
                               if (isSelected)
                                 const Icon(
                                   Icons.radio_button_checked,
@@ -291,16 +364,53 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         barrierDismissible: false,
         builder: (context) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Редагувати слово'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            backgroundColor: Colors.grey[50],
+            title: Row(
+              children: [
+                const Icon(Icons.edit, color: Color(0xFF2ECC71), size: 28),
+                const SizedBox(width: 12),
+                const Text(
+                  'Редагувати слово',
+                  style: TextStyle(
+                    color: Color(0xFF2C3E50),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  onPressed: () => Navigator.pop(context),
+                  tooltip: 'Закрити',
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(24, 16, 16, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const SizedBox(height: 8),
                   TextField(
                     controller: englishController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Англійське слово',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      prefixIcon: const Icon(Icons.language, color: Color(0xFF3498DB)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelStyle: TextStyle(color: Colors.grey[700]),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
+                      ),
                     ),
                     enableSuggestions: false,
                     autocorrect: false,
@@ -313,9 +423,19 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: ukrainianController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Український переклад',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      prefixIcon: const Icon(Icons.translate, color: Color(0xFF9B59B6)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelStyle: TextStyle(color: Colors.grey[700]),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFF9B59B6), width: 2),
+                      ),
                     ),
                     enableSuggestions: false,
                     autocorrect: false,
@@ -324,9 +444,19 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedLesson,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Урок',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      prefixIcon: const Icon(Icons.book, color: Color(0xFF2ECC71)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelStyle: TextStyle(color: Colors.grey[700]),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFF2ECC71), width: 2),
+                      ),
                     ),
                     items: lessonNames.map((name) => DropdownMenuItem(
                           value: name,
@@ -339,27 +469,79 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                         });
                       }
                     },
+                    dropdownColor: Colors.white,
+                    icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF2ECC71)),
                   ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Скасувати'),
+              // Перший ряд кнопок - Cancel і Delete на одному рівні
+              Row(
+                children: [
+                  // Кнопка Cancel
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue[700],
+                        side: BorderSide(color: Colors.blue[400]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      child: const Text('Скасувати'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Кнопка Delete
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context, {'action': 'delete'});
+                      },
+                      icon: const Icon(Icons.delete_forever, size: 20),
+                      label: const Text('Видалити'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red[700],
+                        side: BorderSide(color: Colors.red[400]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              TextButton(
+              const SizedBox(height: 8),
+              // Кнопка збереження на всю ширину
+              ElevatedButton.icon(
                 onPressed: () {
                   if (englishController.text.isEmpty || ukrainianController.text.isEmpty) {
                     return;
                   }
                   Navigator.pop(context, {
+                    'action': 'save',
                     'english': englishController.text.trim(),
                     'ukrainian': ukrainianController.text.trim(),
                     'lesson': selectedLesson,
                   });
                 },
-                child: const Text('Зберегти'),
+                icon: const Icon(Icons.save, size: 20),
+                label: const Text('Зберегти'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2ECC71),
+                  foregroundColor: Colors.white,
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
               ),
             ],
           ),
@@ -370,59 +552,74 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
       if (result != null) {
         if (!mounted) return;
         
-        final oldKey = _selectedWordKey!;
-        final newEnglish = result['english'] as String;
-        final newUkrainian = result['ukrainian'] as String;
-        final newLesson = result['lesson'] as String;
+        // Перевіряємо дію
+        if (result['action'] == 'delete') {
+          // Невелика затримка, щоб попередній діалог повністю закрився
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              // Показуємо діалог підтвердження видалення
+              _showDeleteConfirmation(context, provider, _selectedWordKey!);
+            }
+          });
+          return;
+        }
+        
+        // Обробляємо збереження
+        if (result['action'] == 'save') {
+          final oldKey = _selectedWordKey!;
+          final newEnglish = result['english'] as String;
+          final newUkrainian = result['ukrainian'] as String;
+          final newLesson = result['lesson'] as String;
 
-        try {
-          // Показуємо індикатор завантаження - використовуємо кешований месенджер
-          if (!mounted) return;
-          _scaffoldMessenger.showSnackBar(
-            const SnackBar(
-              content: Text('Оновлення слова...'),
-              duration: Duration(seconds: 1),
-            ),
-          );
-
-          final success = await provider.updateWord(
-            oldKey, 
-            newEnglish, 
-            newUkrainian, 
-            newLesson
-          );
-
-          if (!mounted) return;
-
-          if (success) {
-            // Оновлюємо вибране слово, якщо змінилося англійське слово
-            setState(() {
-              _selectedWordKey = newEnglish;
-            });
-
+          try {
+            // Показуємо індикатор завантаження - використовуємо кешований месенджер
+            if (!mounted) return;
             _scaffoldMessenger.showSnackBar(
               const SnackBar(
-                content: Text('Слово успішно оновлено'),
-                backgroundColor: Colors.green,
+                content: Text('Оновлення слова...'),
+                duration: Duration(seconds: 1),
               ),
             );
-          } else {
+
+            final success = await provider.updateWord(
+              oldKey, 
+              newEnglish, 
+              newUkrainian, 
+              newLesson
+            );
+
+            if (!mounted) return;
+
+            if (success) {
+              // Оновлюємо вибране слово, якщо змінилося англійське слово
+              setState(() {
+                _selectedWordKey = newEnglish;
+              });
+
+              _scaffoldMessenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Слово успішно оновлено'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            } else {
+              _scaffoldMessenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Помилка оновлення слова'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          } catch (e) {
+            print('Помилка при оновленні слова після діалогу: $e');
+            if (!mounted) return;
             _scaffoldMessenger.showSnackBar(
-              const SnackBar(
-                content: Text('Помилка оновлення слова'),
+              SnackBar(
+                content: Text('Помилка: $e'),
                 backgroundColor: Colors.red,
               ),
             );
           }
-        } catch (e) {
-          print('Помилка при оновленні слова після діалогу: $e');
-          if (!mounted) return;
-          _scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: Text('Помилка: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
         }
       }
     } catch (e) {
@@ -630,8 +827,19 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                 // Невелика затримка перед зміною статусу
                 await Future.delayed(const Duration(milliseconds: 100));
                 if (mounted) {
-                  // Змінюємо статус слова
-                  await provider.toggleWordLearned(wordKey);
+                  if (word.learned) {
+                    // Якщо слово вже вивчене, позначаємо як невивчене
+                    await provider.markWordAsUnlearned(wordKey);
+                  } else {
+                    // Якщо слово не вивчене, позначаємо його як вивчене
+                    await provider.markWordAsLearned(wordKey);
+                  }
+                  
+                  // Оновлюємо список слів
+                  await provider.loadWords(
+                    lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+                    showLearned: false
+                  );
                   
                   if (mounted) {
                     _scaffoldMessenger.showSnackBar(
@@ -641,16 +849,18 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                               ? 'Слово позначено як невивчене' 
                               : 'Слово позначено як вивчене'
                         ),
-                        backgroundColor: Colors.green,
+                        backgroundColor: word.learned ? Colors.orange : Colors.green,
                       ),
                     );
                   }
                 }
               },
             ),
+            // Додаємо два окремі пункти меню, як в LearnedWordsScreen
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Видалити слово'),
+              leading: const Icon(Icons.delete, color: Colors.orange),
+              title: const Text('Видалити з підтвердженням'),
+              subtitle: const Text('Показати діалог підтвердження перед видаленням'),
               onTap: () {
                 // Закриваємо меню
                 Navigator.pop(context);
@@ -660,6 +870,17 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                     _showDeleteConfirmation(context, provider, wordKey);
                   }
                 });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text('Видалити відразу'),
+              subtitle: const Text('Видалити слово без додаткових питань'),
+              onTap: () async {
+                // Закриваємо меню
+                Navigator.pop(context);
+                // Видаляємо слово відразу
+                await _deleteWord(context, provider, wordKey);
               },
             ),
           ],
@@ -675,33 +896,30 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   ) {
     if (!mounted) return;
     
+    // Використовуємо простіший діалог, як в LearnedWordsScreen
     showDialog(
       context: context,
-      barrierDismissible: false, // Вимикаємо закриття при натисканні поза діалогом
-      builder: (context) => AlertDialog(
-        title: const Text('Видалити слово?'),
-        content: Text('Ви дійсно хочете видалити слово "$wordKey"?'),
+      barrierDismissible: false, // Запобігаємо випадковому закриттю діалогу
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Видалення слова'),
+        content: Text('Ви впевнені, що хочете повністю видалити слово "$wordKey"?\n\nЦю дію неможливо скасувати.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Скасувати'),
           ),
           TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
+            onPressed: () {
+              // Закриваємо діалог спочатку
+              Navigator.of(dialogContext).pop();
               
-              // Невелика затримка перед показом повідомлення
-              await Future.delayed(const Duration(milliseconds: 100));
-              
-              if (mounted) {
-                // У майбутньому можна додати метод видалення слова
-                _scaffoldMessenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Функція видалення слів поки недоступна'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-              }
+              // Використовуємо малу затримку перед видаленням
+              Future.delayed(const Duration(milliseconds: 100), () {
+                if (mounted) {
+                  // Викликаємо метод видалення
+                  _deleteWord(context, provider, wordKey);
+                }
+              });
             },
             child: const Text('Видалити', style: TextStyle(color: Colors.red)),
           ),
@@ -776,5 +994,77 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         ),
       ),
     );
+  }
+
+  // Добавляємо окремий метод для видалення слова, щоб можна було викликати його з будь-якого місця
+  Future<void> _deleteWord(BuildContext context, WordTrainerProvider provider, String wordKey) async {
+    print("Trying to delete word: $wordKey");
+    
+    // Зберігаємо стан слова перед видаленням для перевірки
+    final wordExists = provider.words.containsKey(wordKey);
+    print("Word exists before deletion: $wordExists");
+    
+    try {
+      // Показуємо індикатор завантаження - використовуємо кешований месенджер
+      if (mounted) {
+        _scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Видалення слова...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+      
+      // Викликаємо метод бази даних напряму через провайдер
+      final success = await provider.deleteWord(wordKey);
+      print("Delete result: $success");
+      
+      // Перевіряємо чи слово справді видалено
+      final wordExistsAfter = provider.words.containsKey(wordKey);
+      print("Word exists after deletion: $wordExistsAfter");
+      
+      // Примусово видаляємо з локального стану і оновлюємо інтерфейс
+      if (success) {
+        // Очищаємо виділення, якщо видалене слово було виділено
+        if (mounted) {
+          setState(() {
+            if (_selectedWordKey == wordKey) {
+              _selectedWordKey = null;
+            }
+          });
+        }
+        
+        // Перезавантажуємо список слів після видалення
+        await provider.loadWords(
+          lessonName: _selectedLesson != 'Всі уроки' ? _selectedLesson : null,
+          showLearned: false
+        );
+      }
+      
+      if (mounted) {
+        // Показуємо повідомлення
+        _scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(success 
+              ? 'Слово "$wordKey" видалено повністю' 
+              : 'Помилка при видаленні слова'
+            ),
+            backgroundColor: success ? Colors.green : Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print("Error deleting word: $e");
+      if (mounted) {
+        _scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text('Помилка при видаленні: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 } 
